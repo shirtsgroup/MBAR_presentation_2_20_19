@@ -23,3 +23,5 @@ def get_distances(pdb_file,simulation_steps):
  output_obj.close()
  return(distances)
 
+def isclose(a, b, tol):
+        return abs(a-b) <= tol

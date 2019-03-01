@@ -4,8 +4,8 @@
 # The protocol is broken up into the following sections:
 
 # 1) Run-time options
-# 2) Prepare and run OpenMM simulation(s)
-# 3) Sub-sample simulation data to identify uncorrelated samples
+# 2) Prepare and run OpenMM simulations (Langevin dynamics @ named temps.)
+# 3) Sub-sample simulation data to obtain decorrelated samples
 # 4) Calculate 'weights' for each thermodynamic state with MBAR
 # 5) Calculate dimensionless free energies with MBAR
 
@@ -19,6 +19,9 @@ import mdtraj as md
 import matplotlib.pyplot as pyplot
 import math
 import util
+import random
+import multiprocessing
+from multiprocessing import Pool
 from openmmtools.testsystems import SodiumChlorideCrystal
 from pymbar import MBAR, timeseries
 
@@ -30,20 +33,20 @@ print("Running the MBAR free energy protocol for sodium chloride...")
 #
 #############
 
+processors = 18
 simulation_time_step = 0.002 # Units = picoseconds
-simulation_temperature = 300 # Units = Kelvin
 kB = 0.008314462  #Boltzmann constant (Gas constant) in kJ/(mol*K)
-state_range = [num_states*5 for num_states in range(1,21)]
-output_file_name = 'output.dat'
+state_range = [num_states for num_states in range(2,50)]
+min_temp = 300.0 # Units = Kelvin
+max_temp = 500.0 # Units = Kelvin
 if cwd().split('/')[-1] == 'FreeEnergy':
  output_dir = 'output/'
+ figures_dir = 'figures/'
 if cwd().split('/')[-1] == 'MBAR_presentation_2_20_19':
  output_dir = 'NaCl/FreeEnergy/output/'
-if not(output_file_name) :
- print("Please provide a valid output file location")
- exit()
+ figures_dir = 'NaCl/FreeEnergy/figures/'
 simulation_steps = 100000
-print_frequency = 1 # Number of steps to skip when printing output
+print_frequency = 10 # Number of steps to skip when printing output
 nskip = 10 # Number of steps to skip when reading timeseries data to find the equilibration time
 simulation_data_exists = True
 analysis_data_exists = True
@@ -57,159 +60,196 @@ analysis_data_exists = True
 # An OpenMM simulation requires three input objects: a 'system', an 'integrator', and a 'context'
 
 total_simulation_time = simulation_time_step * simulation_steps # Units = picoseconds
-if not(simulation_data_exists):
- system = SodiumChlorideCrystal() # Define a system
- integrator = LangevinIntegrator(simulation_temperature, total_simulation_time, simulation_time_step) # Define an integrator
- simulation = Simulation(system.topology, system.system, integrator) # Define a simulation 'context'
- simulation.reporters.append(PDBReporter(str(output_dir+"output.pdb"),1))
- simulation.reporters.append(StateDataReporter(str(output_dir+output_file_name), print_frequency, \
- step=True, totalEnergy=True, potentialEnergy=True, kineticEnergy=True, temperature=True))
- simulation.context.setPositions(system.positions) # Assign particle positions for this context
-#else:
- simulation.minimizeEnergy() # Set the simulation type to energy minimization
- print("Performing openMM simulation for "+str(simulation_steps)+" steps.")
- simulation.step(simulation_steps) # Run the simulation
+# Define arrays that will store our data
+free_energies_for_each_num_states = []
+free_energies_for_each_num_states_same_total_samples = []
+uncertainties_for_each_num_states = []
+uncertainties_for_each_num_states_same_total_samples = []
+distances_for_each_num_states = []
+distances_for_each_num_states_same_total_samples = []
+distance_averages_for_each_num_states = []
+distance_averages_for_each_num_states_same_total_samples = []
+uncertainty_distances_for_each_num_states = []
+uncertainty_distances_for_each_num_states_same_total_samples = []
+weights_for_each_num_states = []
+weights_for_each_num_states_same_total_samples = []
+temperatures_for_each_num_states = []
+average_uncertainty_for_each_fraction_of_samples = [[0.0 for num_states in state_range] for index in range(0.5,0.8,0.05)]
+average_distance_for_each_fraction_of_samples = [[0.0 for num_states in state_range] for index in range(0.5,0.8,0.05)]
 
-#############
-#
-# 3) Sub-sample simulation data to identify uncorrelated samples
-#
-#############
 
-if not(analysis_data_exists):
-# Read in the total energies
- output_obj = open(str(output_dir+output_file_name),'r')
+def individual_simulation_procedure(temperature):
+   system = SodiumChlorideCrystal() # Define a system
+   integrator = LangevinIntegrator(temperature, total_simulation_time, simulation_time_step) # Define an integrator
+   simulation = Simulation(system.topology, system.system, integrator) # Define a simulation 'context'
+   if not(os.path.exists(str(output_dir+str(temperature)))): os.mkdir(str(output_dir+str(temperature)))
+   simulation.reporters.append(PDBReporter(str(output_dir+str(temperature)+"/coordinates.pdb"),1))
+   simulation.reporters.append(StateDataReporter(str(output_dir+str(temperature)+"/sim_data.dat"), print_frequency, \
+   step=True, totalEnergy=True, potentialEnergy=True, kineticEnergy=True, temperature=True))
+   simulation.context.setPositions(system.positions) # Assign particle positions for this context
+   simulation.minimizeEnergy() # Set the simulation type to energy minimization
+   simulation.step(simulation_steps) # Run the simulation
+   return
+
+# If we have run simulations, but we want to re-analyze the output, we start here
+
+def individual_analysis_procedure(temperature):
+#  Read in the total energies
+   U_uncorrelated = np.array([])
+   U_reduced = np.array([])
+   output_obj = open(str(output_dir+str(temperature)+"/sim_data.dat"),'r')
 # E_total_all stores the total energies from NaCl simulation output
- E_total_all_temp = np.array([l.split(',')[3] for l in output_obj.readlines()])
- output_obj.close()
-# Read in the Temperatures
- output_obj = open(str(output_dir+output_file_name),'r')
-# T_all stores the Temperatures from NaCl simulation output
- T_all_temp = np.array([l.split(',')[4] for l in output_obj.readlines()])
- output_obj.close()
+   E_total_all_temp = np.array([l.split(',')[3] for l in output_obj.readlines()])
+   output_obj.close()
 # Read in the distances
- distances = util.get_distances(str(output_dir+"output.pdb"),simulation_steps)
- E_total_all = np.array(np.delete(E_total_all_temp,0,0),dtype=float)
- T_all = np.array(np.delete(T_all_temp,0,0),dtype=float)
- [t0, g, Neff_max] = timeseries.detectEquilibration(E_total_all,nskip=nskip)
- print("The total simulation time was "+str(total_simulation_time)+" picoseconds.")
- print("The equilibration time was "+str(t0*simulation_time_step)+" picoseconds.")
- E_total_equil = E_total_all[t0:]
- T_equil = T_all[t0:]
- uncorrelated_energy_indices = timeseries.subsampleCorrelatedData(E_total_equil, g=g) # Determine indices of uncorrelated samples
- print("Sub-sampled simulation data with "+str(len(uncorrelated_energy_indices))+" uncorrelated samples")
- np.savetxt(str(output_dir+'uncorrelated_total_energies.dat'),E_total_equil[uncorrelated_energy_indices])
- np.savetxt(str(output_dir+'uncorrelated_temperatures.dat'),T_equil[uncorrelated_energy_indices])
- np.savetxt(str(output_dir+'uncorrelated_distances.dat'),distances[uncorrelated_energy_indices])
- U_uncorrelated = E_total_equil[uncorrelated_energy_indices] # Uncorrelated total energies
- T_uncorrelated = T_equil[uncorrelated_energy_indices] # Uncorrelated temperatures
-else:
- print("Reading existing simulation output...")
- distances_obj = open(str(output_dir+'uncorrelated_distances.dat'),'r')
- distances = np.array([float(l) for l in distances_obj.readlines()])
- distances_obj.close()
- uncorrelated_energies_obj = open(str(output_dir+'uncorrelated_total_energies.dat'),'r')
- U_uncorrelated = np.array([float(l) for l in uncorrelated_energies_obj.readlines()])
- print("Found "+str(len(U_uncorrelated))+" uncorrelated samples.")
- uncorrelated_energies_obj.close()
- uncorrelated_temperatures_obj = open(str(output_dir+'uncorrelated_temperatures.dat'),'r')
- T_uncorrelated = np.array([float(l) for l in uncorrelated_temperatures_obj.readlines()])
- uncorrelated_temperatures_obj.close()
-# Calculate the reduced potential energies for the uncorrelated samples
-U_reduced = np.array([U_uncorrelated[index]/(T_uncorrelated[index]*kB) for index in range(0,len(T_uncorrelated))])
+   distances = util.get_distances(str(output_dir+str(temperature)+"/coordinates.pdb"),simulation_steps)
+   E_total_all = np.array(np.delete(E_total_all_temp,0,0),dtype=float)
+   [t0, g, Neff_max] = timeseries.detectEquilibration(E_total_all,nskip=nskip)
+   E_total_equil = E_total_all[t0:]
+   uncorrelated_energy_indices = timeseries.subsampleCorrelatedData(E_total_equil, g=g) # Determine indices of uncorrelated samples
+   np.savetxt(str(output_dir+str(temperature)+'/uncorrelated_total_energies.dat'),E_total_equil[uncorrelated_energy_indices])
+   np.savetxt(str(output_dir+str(temperature)+'/uncorrelated_distances.dat'),distances[uncorrelated_energy_indices])
+   U_uncorrelated = np.append(U_uncorrelated,E_total_equil[uncorrelated_energy_indices]) # Uncorrelated total energies
+   U_reduced = np.append(U_reduced,np.array([E_total_equil[uncorrelated_energy_indices]/(temperature*kB)]))
+   return
 
+def read_simulation_data(temperature):
+   U_uncorrelated = np.array([])
+   distances_obj = open(str(output_dir+str(temperature)+'/uncorrelated_distances.dat'),'r')
+   distances = np.array([float(l) for l in distances_obj.readlines()])
+   distances_obj.close()
+   uncorrelated_energies_obj = open(str(output_dir+str(temperature)+'/uncorrelated_total_energies.dat'),'r')
+   U_uncorrelated = np.append(U_uncorrelated,[float(l) for l in uncorrelated_energies_obj.readlines()])
+   uncorrelated_energies_obj.close()
+   return(U_uncorrelated,distances)
+
+if __name__ == '__main__':
+
+#############
+#
+# Begin iteration over states
+#
+#############
+
+# If we haven't run simulations yet we start here
+ if not(simulation_data_exists):
+  for num_states in state_range:
+   print("Running simulations with "+str(num_states)+" states")
+#  Define the temperature range based upon the number of states
+   simulation_temperatures = [round((min_temp + i*(max_temp-min_temp)/(num_states-1)),1) for i in range(0,num_states)]
+   for temperature in simulation_temperatures:
+    if os.path.exists(str(output_dir+str(temperature))):
+     simulation_temperatures.remove(temperature)
+
+   if not(simulation_data_exists):
+    pool = Pool(processes=processors)
+    pool.map(individual_simulation_procedure,simulation_temperatures)
+
+# If we haven't analyzed the simulation data yet:
+ if not(analysis_data_exists):
+  for num_states in state_range:
+   print("Running analysis with "+str(num_states)+" states")
+   temperatures = [round((min_temp + i*(max_temp-min_temp)/(num_states-1)),1) for i in range(0,num_states)]
+   if not any(os.path.exists(str(output_dir+str(temperatures[index]))) for index in range(0,len(temperatures))):
+    pool = Pool(processes=processors)
+    pool.map(individual_analysis_procedure,temperatures)
+
+# If we've already performed simulations and analyzed data:
+ if analysis_data_exists: print("Reading output from previous analyses...")
+ num_states_index = 0
+
+# Define arrays to analyze data with a different number of total samples
+ average_uncertainty_for_each_fraction_of_samples = []
+ average_distance_for_each_fraction_of_samples = []
+ fraction_index
+ for fraction_of_samples in range(0.5,0.8,0.5):
+  for num_states in state_range:
+   print("with "+str(num_states)+" states...")
+# Create an array to store the number of counts in each state
+   state_counts = []
+   state_counts_same_total_samples = []
+   U_uncorrelated = []
+   U_uncorrelated_same_total_samples = []
+   distances = []
+   distances_same_total_samples = []
+  
+   temperatures = [round((min_temp + i*(max_temp-min_temp)/(num_states-1)),1) for i in range(0,num_states)]
+#  print(temperatures)
+   temperatures_for_each_num_states.extend([temperatures])
+   if num_states == 2:
+    total_samples = int(round(2.0*fraction_of_samples*min(len(read_simulation_data(temperatures[0])[0]),len(read_simulation_data(temperatures[0])[0]))))
+    print("Total samples ="+str(total_samples))
+   samples_per_state = int(round(total_samples/num_states)-1)
+   for temperature in temperatures:
+    U_uncorrelated_temp, distances_temp = read_simulation_data(temperature) 
+    U_uncorrelated.extend(U_uncorrelated_temp)
+    sample_indices = []
+#   print(samples_per_state)
+    while len(sample_indices) < samples_per_state:
+#    print(len(sample_indices))
+     sample_index = random.randint(0,len(U_uncorrelated_temp)-1)
+     if sample_index not in sample_indices: 
+      sample_indices.extend([int(sample_index)])
+#     print(sample_index)
+#     print(U_uncorrelated_temp[sample_index])
+      U_uncorrelated_same_total_samples.extend([U_uncorrelated_temp[sample_index]])
+      distances_same_total_samples.extend([distances_temp[sample_index]])
+    state_counts.extend([len(U_uncorrelated_temp)])
+    state_counts_same_total_samples.extend([samples_per_state])
+    distances.extend(distances_temp)
+#   distances_same_total_samples.extend([distances_temp[sample] for sample in sample_indices])
 #############
 #
 # 4) Calculate 'weights' for each thermodynamic state with MBAR
 #
 #############
 
-# Now we are ready to use U_reduced to optimize a set of weights for each thermodynamic 'state', 
-# We split the full range of temperatures sampled during the simulation into bins (one 'bin' for each 'state')
-# Bin widths are calculated as: ( T_max - T_min ) / 
-T_max = max(T_uncorrelated)
-T_min = min(T_uncorrelated)
-# Define arrays that will store our data
-T_ranges_for_each_num_states = np.array([[[0.,0.] for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-distributions_for_each_num_states = np.array([[0. for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-free_energies_for_each_num_states = np.array([[0. for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-state_temps_for_each_num_states = np.array([[0. for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-state_energies_for_each_num_states = np.array([[0. for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-distances_for_each_num_states = np.array([[[0. for i in range(0,len(U_uncorrelated))] for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-free_energies_for_each_num_states = np.array([[[0. for i in range(0,len(U_uncorrelated))] for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-weights_for_each_num_states = np.array([[[0. for i in range(0,len(U_uncorrelated))] for i in range(0,state_range[len(state_range)-1])] for i in range(0,len(state_range))])
-num_states_index = 0
-figure_index = 1
-
-#############
-#
-# Begin iteration over different number of 'states' used (to define normalization constants in MBAR).
-#
-#############
-
-for num_states in state_range:
-# Assign temperature windows by identifying the full temperature range of the samples and dividing by the number of states.
- T_step_size = (T_max - T_min) / num_states
-# print("The maximum and minimum sampled temperatures were: "+str(T_max)+" and "+str(T_min)+", respectively.")
- print("Analyzing data with "+str(num_states)+" 'states' defined by T ranges of "+str(T_step_size)+" K.")
- state_ranges = np.array([[T_min+(i*T_step_size),T_min+((i+1)*T_step_size)] for i in range(0,num_states)])
- state_index = 0
- T_state_center= np.array([0.0 for i in range(0,num_states)])
- state_energies = np.array([0.0 for i in range(0,num_states)])
-# Determine the center of the temperature window 
- for state in range(0,num_states):
-  T_state_center[state] = sum(state_ranges[state])/2.0
-# Create an array to store the number of counts in each temperature window
- state_counts = np.array([0 for i in range(0,num_states)])
-# Define u_kn (ESSENTIAL array for MBAR!!)
- u_kn = np.array([[U_uncorrelated[index]/T_state_center[state] for index in range(0,len(U_uncorrelated))] for state in range(0,num_states)])
-# Assign each of the samples to a thermodynamic state
- for T in T_uncorrelated:
-  state_index = 0
-  for state in state_ranges:
-   if T >= state[0] and T < state[1]:
-    state_counts[state_index] = state_counts[state_index] + 1
-    exit
-   if state_index == len(state_ranges)-1 and T == state[1]:
-    state_counts[state_index] = state_counts[state_index] + 1
-    exit
-   state_index = state_index + 1
-# print("The distribution with "+str(num_states)+" states is: "+str(state_counts))
-# Store the distribution data for this number of states so that we can plot comparisons later
- for state in range(0,num_states):
-  distributions_for_each_num_states[num_states_index][state] = state_counts[state]
-  state_temps_for_each_num_states[num_states_index][state] = sum(state_ranges[state])/2
- T_ranges_for_each_num_states[num_states_index][state] = state_ranges[state]
+# 'u_kn' contains the decorrelated reduced potential energies evaluated at each temperature (state)
+   u_kn = np.array([[float(float(U_uncorrelated[sample])/float(temperature)) for sample in range(0,len(U_uncorrelated))] for temperature in temperatures])
+   u_kn_same_total_samples = np.array([[float(float(U_uncorrelated_same_total_samples[sample])/float(temperature)) for sample in range(0,len(U_uncorrelated_same_total_samples))] for temperature in temperatures])
+#  print(u_kn_same_total_samples)
+#  exit()
 # Initialize MBAR
- mbar = MBAR(u_kn, state_counts, verbose=False, relative_tolerance=1e-12)
-# Get the 'weights', or reweighted mixture distribution
- weights = mbar.getWeights()
-# Store the weights for plot comparisons later on
- for sample in range(0,len(weights)):
-  for state in range(0,num_states):
-#   print(weights_for_each_num_states[num_states_index][state][sample])
-   weights_for_each_num_states[num_states_index][state][sample] = weights[sample][state]
+   mbar = MBAR(u_kn, state_counts, verbose=False, relative_tolerance=1e-12)
+   mbar_same_total_samples = MBAR(u_kn_same_total_samples, state_counts_same_total_samples, verbose=False, relative_tolerance=1e-12)
+#  Get the 'weights', or reweighted mixture distribution
+   weights = mbar.getWeights()
+   weights_same_total_samples = mbar_same_total_samples.getWeights()
+# Store the weights 
+   weights_for_each_num_states.extend([weights])
+   weights_for_each_num_states_same_total_samples.extend([weights_same_total_samples])
 
 #############
 #
-# 5) Calculate dimensionless free energies with MBAR
+# 5) Calculate dimensionless free energies and <R_Na-Cl> with MBAR
 #
 #############
 
 # Get the dimensionless free energy differences
- free_energies,uncertainty_free_energies = mbar.getFreeEnergyDifferences()[0],mbar.getFreeEnergyDifferences()[1]
-# print("With "+str(num_states)+" states the free energies are:")
+   free_energies,uncertainty_free_energies = mbar.getFreeEnergyDifferences()[0],mbar.getFreeEnergyDifferences()[1]
 # Save the free energies for this number of states for comparison plots later on
- for sample in range(0,len(free_energies)):
-  for state in range(0,num_states):
-   free_energies_for_each_num_states[num_states_index][sample][state] = free_energies[sample][state]
-   state_temps_for_each_num_states[num_states_index][state] = T_state_center[state]
-   state_energies[state] = state_energies[state] + free_energies[sample][state]
-# Calculate the averate total energy for the samples within each state (temperature window)
- for state in range(0,num_states):
-  state_energies_for_each_num_states[num_states_index][state] = state_energies[state]/len(free_energies)
+   free_energies_for_each_num_states.extend([free_energies])
+   uncertainties_for_each_num_states.extend([uncertainty_free_energies])
+   free_energies,uncertainty_free_energies = mbar_same_total_samples.getFreeEnergyDifferences()[0],mbar_same_total_samples.getFreeEnergyDifferences()[1]
+   free_energies_for_each_num_states_same_total_samples.extend([free_energies])
+   uncertainties_for_each_num_states_same_total_samples.extend([uncertainty_free_energies])
 
-#
+# Get the expectation value of the Na-Cl distance
+   averages, uncertainty = mbar.computeExpectations(distances)[0],mbar.computeExpectations(distances)[1]
+   distance_averages_for_each_num_states.extend([averages]) 
+   uncertainty_distances_for_each_num_states.extend([uncertainty])
+   averages, uncertainty = mbar_same_total_samples.computeExpectations(distances_same_total_samples)[0],mbar_same_total_samples.computeExpectations(distances_same_total_samples)[1]
+   distance_averages_for_each_num_states_same_total_samples.extend([averages])
+   uncertainty_distances_for_each_num_states_same_total_samples.extend([uncertainty])
+
+   average_uncertainty_for_each_fraction_of_samples[fraction_index][num_states_index] = sum(uncertainty)/len(uncertainty)
+   average_distance_for_each_fraction_of_samples[fraction_index][num_states_index] = sum(averages)/len(averages)
+
+#  print(uncertainty)
+   num_states_index = num_states_index + 1
+  fraction_index = fraction_index + 1
+
+
 
 #############
 #
@@ -217,7 +257,6 @@ for num_states in state_range:
 #
 #############
 
- num_states_index = num_states_index + 1
 
 #############
 #
@@ -225,27 +264,106 @@ for num_states in state_range:
 #
 #############
 
+figure_index = 0
+
 # Plot distribution functions versus Temp.
-y_data = [distribution for distribution in distributions_for_each_num_states]
-x_data = [Temp for Temp in state_temps_for_each_num_states]
+
+# First re-type distance and temperature arrays for pyplot:
+distances = np.array([[distances[index]-distances[0] for index in range(0,len(distances))] for distances in distance_averages_for_each_num_states])
+temperatures = np.array([[Temp[index] for index in range(0,len(Temp))] for Temp in temperatures_for_each_num_states])
+distance_uncertainty = np.array([[uncertainty[index] for index in range(0,len(uncertainty))] for uncertainty in uncertainty_distances_for_each_num_states])
+
+states_temp = []
+distances_temp = []
+uncertainty_temp = []
+# Combine data for T = 400.0 K
+for state_index in range(0,len(temperatures)):
+ if any(util.isclose(temperatures[state_index][temperature_index],400.0,tol=0.001) for temperature_index in range(0,len(temperatures[state_index]))):
+  for temperature_index in range(0,len(temperatures[state_index])):
+   if temperatures[state_index][temperature_index] == float(400.0):
+    states_temp.append(len(temperatures[state_index]))
+    distances_temp.append(distance_averages_for_each_num_states[state_index][temperature_index])
+    uncertainty_temp.append(uncertainty_distances_for_each_num_states[state_index][temperature_index])
+    break
+states_400 = np.array([states_temp[index] for index in range(0,len(states_temp))])
+uncertainty_400 = np.array([uncertainty_temp[index] for index in range(0,len(uncertainty_temp))])
+distances_400 = np.array([distances_temp[index] for index in range(0,len(distances_temp))])
+
+#Plot <R_Na-Cl> @ 400 K vs. # of thermodynamic states
 figure = pyplot.figure(figure_index)
-pyplot.plot(x_data,y_data,figure = figure)
-pyplot.xlabel("Temperature (Kelvin)")
-pyplot.ylabel("Counts")
-pyplot.legend([num_states*5 for num_states in range(1,21)],title="# States",fontsize=6)
-pyplot.savefig(str(output_dir+str("/distributions_v_temp.png")))
+pyplot.plot(states_400,distances_400,figure=figure)
+pyplot.xlabel("Number of thermodynamic states")
+pyplot.ylabel("<R_Na-Cl> (Angstroms)")
+pyplot.title("Predicted <R_Na-Cl> at 400 K")
+pyplot.savefig(str(figures_dir+str("/R_Na-Cl_v_num_states.png")))
+pyplot.show()
 pyplot.close()
 figure_index = figure_index + 1
 
-# Plot the average dimensionless free energy for each state versus Temp.
+#Plot <R_Na-Cl> @ 400 K vs. # of thermodynamic states
 figure = pyplot.figure(figure_index)
-x_data = [Temp for Temp in state_temps_for_each_num_states]
-y_data = [energies for energies in state_energies_for_each_num_states] 
-pyplot.plot(x_data,y_data,figure = figure)
-pyplot.xlabel("Temperature (Kelvin)")
-pyplot.ylabel("Dimensionless free energy differences")
-pyplot.legend([num_states*5 for num_states in range(1,21)],title="# States",fontsize=6)
-pyplot.savefig(str(output_dir+"/free_energy_differences_v_temp.png"))
+pyplot.plot(states_400,uncertainty_400,figure=figure)
+pyplot.xlabel("Number of thermodynamic states")
+pyplot.ylabel("Uncertainty(<R_Na-Cl>) (Angstroms)")
+pyplot.title("Uncertainty in <R_Na-Cl> at 400 K")
+pyplot.savefig(str(figures_dir+str("/Uncertainty_R_Na-Cl_v_num_states.png")))
+pyplot.show()
+pyplot.close()
+figure_index = figure_index + 1
+
+# Now we prepare arrays to plot the results with a constant # of samples
+states_temp = []
+distances_temp = []
+uncertainty_temp = []
+# Combine data for T = 400.0 K
+for state_index in range(0,len(temperatures)):
+ if any(util.isclose(temperatures[state_index][temperature_index],400.0,tol=0.001) for temperature_index in range(0,len(temperatures[state_index]))):
+  for temperature_index in range(0,len(temperatures[state_index])):
+   if temperatures[state_index][temperature_index] == float(400.0):
+    states_temp.append(len(temperatures[state_index]))
+    distances_temp.append(distance_averages_for_each_num_states_same_total_samples[state_index][temperature_index])
+    uncertainty_temp.append(uncertainty_distances_for_each_num_states_same_total_samples[state_index][temperature_index])
+    break
+states_400 = np.array([states_temp[index] for index in range(0,len(states_temp))])
+uncertainty_400 = np.array([uncertainty_temp[index] for index in range(0,len(uncertainty_temp))])
+distances_400 = np.array([distances_temp[index] for index in range(0,len(distances_temp))])
+
+
+#Plot <R_Na-Cl> @ 400 K vs. # of thermodynamic states with constant # of samples
+figure = pyplot.figure(figure_index)
+pyplot.plot(states_400,distances_400,figure=figure)
+pyplot.xlabel("Number of thermodynamic states")
+pyplot.ylabel("<R_Na-Cl> (Angstroms)")
+pyplot.title("Predicted <R_Na-Cl> (with constant #samples) at 400 K")
+pyplot.savefig(str(figures_dir+str("/R_Na-Cl_v_num_states_constant_samples.png")))
+pyplot.show()
+pyplot.close()
+figure_index = figure_index + 1
+
+#Plot <R_Na-Cl> @ 400 K vs. # of thermodynamic states with constant # of samples
+figure = pyplot.figure(figure_index)
+pyplot.plot(states_400,uncertainty_400,figure=figure)
+pyplot.xlabel("Number of thermodynamic states")
+pyplot.ylabel("Uncertainty(<R_Na-Cl>) (Angstroms)")
+pyplot.title("Uncertainty in <R_Na-Cl> (with constant #samples) at 400 K")
+pyplot.savefig(str(figures_dir+str("/Uncertainty_R_Na-Cl_v_num_states_constant_samples.png")))
+pyplot.show()
+pyplot.close()
+figure_index = figure_index + 1
+
+#Script works until here
+
+uncertainty_400 = np.array([uncertainty for index in range(0,len(uncertainty_temp))])
+distances_400 = np.array([distances_temp[index] for index in range(0,len(distances_temp))])
+
+#Plot <R_Na-Cl> @ 400 K vs. # of thermodynamic states for different numbers of total samples
+figure = pyplot.figure(figure_index)
+pyplot.plot(states_400,uncertainty_400,figure=figure)
+pyplot.xlabel("Number of thermodynamic states")
+pyplot.ylabel("Uncertainty(<R_Na-Cl>) (Angstroms)")
+pyplot.title("Uncertainty in <R_Na-Cl> (with constant #samples) at 400 K")
+pyplot.savefig(str(figures_dir+str("/Uncertainty_R_Na-Cl_v_num_states_constant_samples.png")))
+pyplot.show()
 pyplot.close()
 figure_index = figure_index + 1
 
