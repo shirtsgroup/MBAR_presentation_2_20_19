@@ -1,0 +1,47 @@
+REMARK   1 CREATED WITH OPENMM 7.3, 2019-03-08
+MODEL        1
+HETATM    1 Na+  Na+ A   1       0.042   5.576   0.033  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.820   2.831   2.794  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        2
+HETATM    1 Na+  Na+ A   1       0.029   5.595   0.029  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.797   2.859   2.754  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        3
+HETATM    1 Na+  Na+ A   1       0.041   0.012   0.019  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.796   2.849   2.746  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        4
+HETATM    1 Na+  Na+ A   1       0.047   5.610   5.626  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.844   2.895   2.743  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        5
+HETATM    1 Na+  Na+ A   1       0.074   5.618   5.559  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.860   2.891   2.728  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        6
+HETATM    1 Na+  Na+ A   1       0.087   0.008   5.547  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.871   2.933   2.745  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        7
+HETATM    1 Na+  Na+ A   1       0.106   0.010   5.545  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.877   2.976   2.735  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        8
+HETATM    1 Na+  Na+ A   1       0.119   0.085   5.559  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.898   2.961   2.706  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        9
+HETATM    1 Na+  Na+ A   1       0.112   0.054   5.576  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.920   2.985   2.698  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+END

@@ -1,0 +1,97 @@
+REMARK   1 CREATED WITH OPENMM 7.3, 2019-03-08
+MODEL        1
+HETATM    1 Na+  Na+ A   1       5.625   5.618   5.619  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.833   2.827   2.794  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        2
+HETATM    1 Na+  Na+ A   1       5.619   5.559   5.617  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.831   2.859   2.802  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        3
+HETATM    1 Na+  Na+ A   1       5.624   5.589   5.599  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.791   2.875   2.825  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        4
+HETATM    1 Na+  Na+ A   1       0.003   5.609   5.590  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.800   2.898   2.850  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        5
+HETATM    1 Na+  Na+ A   1       5.622   5.586   5.586  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.787   2.921   2.825  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        6
+HETATM    1 Na+  Na+ A   1       5.553   5.576   5.586  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.825   2.940   2.869  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        7
+HETATM    1 Na+  Na+ A   1       5.516   5.594   5.557  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.876   2.942   2.868  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        8
+HETATM    1 Na+  Na+ A   1       5.528   5.608   5.575  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.883   2.915   2.863  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL        9
+HETATM    1 Na+  Na+ A   1       5.545   5.607   5.588  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.879   2.896   2.853  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       10
+HETATM    1 Na+  Na+ A   1       5.552   0.037   5.553  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.860   2.891   2.879  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       11
+HETATM    1 Na+  Na+ A   1       5.560   0.001   5.525  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.872   2.874   2.876  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       12
+HETATM    1 Na+  Na+ A   1       5.578   5.584   5.522  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.833   2.884   2.899  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       13
+HETATM    1 Na+  Na+ A   1       5.578   5.615   5.518  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.860   2.855   2.909  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       14
+HETATM    1 Na+  Na+ A   1       5.523   5.602   5.532  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.862   2.841   2.924  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       15
+HETATM    1 Na+  Na+ A   1       5.521   5.615   5.509  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.870   2.846   2.915  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       16
+HETATM    1 Na+  Na+ A   1       5.505   0.013   5.472  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.907   2.884   2.910  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       17
+HETATM    1 Na+  Na+ A   1       5.535   0.024   5.480  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.900   2.839   2.886  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       18
+HETATM    1 Na+  Na+ A   1       5.548   0.020   5.490  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.924   2.878   2.863  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+MODEL       19
+HETATM    1 Na+  Na+ A   1       5.571   0.018   5.568  1.00  0.00          Na  
+HETATM    2 Cl-  Cl- A   2       2.925   2.870   2.879  1.00  0.00          Cl  
+TER       3      Cl- A   2
+ENDMDL
+END
